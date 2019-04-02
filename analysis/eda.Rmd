@@ -1,0 +1,149 @@
+---
+title: "eda"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load data and packages
+```{r load-data-package, message=FALSE}
+library(tidyverse)
+library(broom)
+
+# Load permanent worker data
+perm <- read_csv("data/combinedpermanentedit.csv")
+```
+
+## Data wrangling
+
+```{r data-wrangle}
+perm %>% distinct(CASE_STATUS)
+
+# Wrangle original variables 
+perm <- perm %>%
+  # Collapse CASE_STATUS
+  mutate(CASE_STATUS = case_when(
+    CASE_STATUS == "DENIED" ~ "Denied",
+    CASE_STATUS == "CERTIFIED" ~ "Certified",
+    CASE_STATUS == "CERTIFIED-EXPIRED" ~ "Certified-Expired",
+    CASE_STATUS == "WITHDRAWN" ~ "Withdrawn",
+    TRUE ~ CASE_STATUS
+  )) %>%
+  # Factor education w/ ref = "None"
+  mutate(JOB_INFO_EDUCATION = relevel(factor(JOB_INFO_EDUCATION), ref = "None")) %>%
+  # Convert string dates to Date
+  mutate(DECISION_DATE = as.Date(DECISION_DATE),
+         CASE_RECEIVED_DATE = as.Date(CASE_RECEIVED_DATE),
+         ORIG_FILE_DATE = as.Date(ORIG_FILE_DATE))
+
+
+# Add binary var for certified/not certified
+perm <- perm %>%
+  filter(!is.na(CASE_STATUS)) %>%
+  mutate(CERT = case_when(
+    CASE_STATUS %in% c("Certified", "Certified-Expired") ~ "Certified",
+    CASE_STATUS == "Denied" ~ "Not Certified",
+    TRUE ~ NA_character_),
+    CERT_BIN = case_when(
+      CASE_STATUS %in% c("Certified", "Certified-Expired") ~ 1,
+      CASE_STATUS == "Denied" ~ 0,
+      TRUE ~ NA_real_))
+```
+
+## Data visualization
+
+### Certification by country
+
+```{r country-data-viz}
+perm_country <- perm %>%
+  # Filter N/A Certs
+  filter(!is.na(CERT)) %>%
+  group_by(COUNTRY_OF_CITIZENSHIP) %>%
+  count(CERT) %>%
+  mutate(prop = n / sum(n)) %>%
+  # Don't count incomplete data 
+  filter(!is.na(COUNTRY_OF_CITIZENSHIP))
+
+# Compute overall average of accepted applicants
+prop_accepted <- perm %>%
+  count(CERT) %>%
+  mutate(prop_accepted = n / sum(n)) %>%
+  filter(CERT == "Certified") %>%
+  pull(prop_accepted)
+
+# Top 10 proportion of countries w/ > 500 applicants
+perm_country %>%
+  filter(sum(n) > 500) %>%
+  filter(CERT == "Certified") %>%
+  arrange(desc(prop)) %>%
+  head(10) %>%
+  ggplot(aes(x = reorder(COUNTRY_OF_CITIZENSHIP, prop), 
+             y = prop)) +
+  geom_bar(stat = "identity") +
+  geom_hline(aes(yintercept = prop_accepted,
+                 colour = "Average Prop"),
+             linetype = "dashed", show.legend = TRUE) +
+  guides(colour = guide_legend(title = NULL)) +
+  coord_flip() +
+  labs(title = "Countries with Top 10 Acceptance Rate for Permanent Workers, 2008 - 2019",
+       subtitle = "For countries n > 500",
+       x = "Country",
+       y = "Proportion of Certified Applicants")
+
+# Bottom 10 proportion of countries w/ > 500 applicants
+perm_country %>%
+  filter(sum(n) > 500) %>%
+  filter(CERT == "Certified") %>%
+  arrange(prop) %>%
+  head(10) %>%
+  ggplot(aes(x = reorder(COUNTRY_OF_CITIZENSHIP, -prop), 
+             y = prop)) +
+  geom_bar(stat = "identity") +
+  geom_hline(aes(yintercept = prop_accepted,
+                 colour = "Average Prop"),
+             linetype = "dashed", show.legend = TRUE) +
+  guides(colour = guide_legend(title = NULL)) +
+  coord_flip() +
+  labs(title = "Countries with Bottom 10 Acceptance Rate for Permanent Workers, 2008 - 2019",
+       subtitle = "For countries n > 500",
+       x = "Country",
+       y = "Proportion of Certified Applicants")
+
+perm_country %>%
+  filter(CERT == "Certified") %>%
+  ggplot(aes(x = prop)) +
+  geom_histogram() +
+  geom_vline(aes(fill = "Average Prop."),
+             xintercept = prop_accepted,
+             colour = "red",
+             linetype = "dashed") +
+  labs(title = "Distribution of Permanent Worker Acceptance Rates",
+       subtitle = "All countries, 2008 - 2019",
+       x = "Proportion Accepted",
+       y = "Number of Countries")
+
+# TODO: Geospatial visualization by country and prop of certification
+```
+
+### Certification by region
+
+```{r region-data-viz}
+# TODO: Recode countries by region and find certification proportion by regions
+```
+
+### Logistic Regression Model
+
+```{r logit-model}
+perm$JOB_INFO_EDUCATION <- relevel(factor(perm$JOB_INFO_EDUCATION), ref = "None")
+full_log_cert <- glm(CERT_BIN ~ DECISION_DATE + 
+                       JOB_INFO_EDUCATION +
+                       WAGE_OFFER_FROM_9089 +
+                       EMPLOYER_NUM_EMPLOYEES + 
+                       EMPLOYER_YR_ESTAB +
+                       , data = perm, family = binomial())
+
+# Display
+tidy(full_log_cert)
+```
