@@ -176,10 +176,11 @@ tidy(full_log_cert)
 # tidy(full_randtree_cert)
 ```
 
-### SVM Model
+### Modeling using caret
 
-```{r svm}
-perm_svm <- perm %>%
+```{r perm_crop}
+# perm_crop contains only the variables we will use
+perm_crop <- perm %>%
   select(CERT_BIN, DECISION_DATE, JOB_INFO_EDUCATION, WAGE_OFFER_FROM_9089, EMPLOYER_NUM_EMPLOYEES, EMPLOYER_YR_ESTAB) %>%
   drop_na() %>%
   mutate(CERT_BIN = as.factor(case_when(
@@ -187,14 +188,22 @@ perm_svm <- perm %>%
     CERT_BIN == 0 ~ "n"
   ))) %>%
   sample_n(10000)
-perm_svm
+perm_crop
 ```
 
 ```{r}
+# create cross validation control
 control <- trainControl(method="cv", number=10)
-full_svm_cert <- train(CERT_BIN ~ ., data = perm_svm, method="svmLinear", trControl = control)
 
-# Print summary
-full_svm_cert
+# svm
+train(CERT_BIN ~ ., data = perm_crop, method="svmLinear", trControl = control)
 
+# k nearest neighbors
+train(CERT_BIN ~ ., data = perm_crop, method="knn", trControl = control)
+
+# random forest
+train(CERT_BIN ~ ., data = perm_crop, method="rf", trControl = control)
+
+# generalized linear model (linear regression)
+train(CERT_BIN ~ ., data = perm_crop, method="glm", trControl = control)
 ```
