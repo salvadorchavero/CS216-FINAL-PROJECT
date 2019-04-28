@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r load-data-package, message=FALSE}
 library(tidyverse)
 library(broom)
+library(randomForest)
 
 # Load permanent worker data
 perm <- read_csv("data/combinedpermanentedit.csv")
@@ -141,9 +142,34 @@ full_log_cert <- glm(CERT_BIN ~ DECISION_DATE +
                        JOB_INFO_EDUCATION +
                        WAGE_OFFER_FROM_9089 +
                        EMPLOYER_NUM_EMPLOYEES + 
-                       EMPLOYER_YR_ESTAB +
+                       EMPLOYER_YR_ESTAB
                        , data = perm, family = binomial())
 
 # Display
 tidy(full_log_cert)
+```
+
+### Random Trees Model
+
+```{r randtree-model}
+# perm_cert_bin <- perm %>%
+#   filter(!is.na(CERT_BIN),
+#          !is.na(DECISION_DATE),
+#          !is.na(JOB_INFO_EDUCATION),
+#          !is.na(WAGE_OFFER_FROM_9089),
+#          !is.na(EMPLOYER_NUM_EMPLOYEES),
+#          !is.na(EMPLOYER_YR_ESTAB))
+# 
+# #perm_cert_bin$DECISION_DATE <- as.factor(perm_cert_bin$DECISION_DATE)
+# perm_cert_bin$JOB_INFO_EDUCATION <- as.factor(perm_cert_bin$JOB_INFO_EDUCATION)
+# 
+# full_randtree_cert <- randomForest(CERT_BIN ~ DECISION_DATE + 
+#                        JOB_INFO_EDUCATION +
+#                        WAGE_OFFER_FROM_9089 +
+#                        EMPLOYER_NUM_EMPLOYEES + 
+#                        EMPLOYER_YR_ESTAB
+#                        , data = perm_cert_bin)
+# 
+# # Display
+# tidy(full_randtree_cert)
 ```
