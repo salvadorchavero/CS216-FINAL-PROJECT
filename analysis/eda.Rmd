@@ -13,6 +13,7 @@ library(tidyverse)
 library(broom)
 library(randomForest)
 library(e1071)
+library(caret)
 
 # Load permanent worker data
 perm <- read_csv("data/combinedpermanentedit.csv")
@@ -181,23 +182,19 @@ tidy(full_log_cert)
 perm_svm <- perm %>%
   select(CERT_BIN, DECISION_DATE, JOB_INFO_EDUCATION, WAGE_OFFER_FROM_9089, EMPLOYER_NUM_EMPLOYEES, EMPLOYER_YR_ESTAB) %>%
   drop_na() %>%
-  head(1000)
+  mutate(CERT_BIN = as.factor(case_when(
+    CERT_BIN == 1 ~ "y",
+    CERT_BIN == 0 ~ "n"
+  ))) %>%
+  sample_n(10000)
 perm_svm
 ```
 
 ```{r}
-full_svm_cert <- svm(CERT_BIN ~ DECISION_DATE + JOB_INFO_EDUCATION +
-                       WAGE_OFFER_FROM_9089 +
-                       EMPLOYER_NUM_EMPLOYEES +
-                       EMPLOYER_YR_ESTAB
-                       , data = perm_svm)
+control <- trainControl(method="cv", number=10)
+full_svm_cert <- train(CERT_BIN ~ ., data = perm_svm, method="svmLinear", trControl = control)
 
 # Print summary
 full_svm_cert
-# Print coefficients
-full_svm_cert$coefs
 
-# idk what this does exactly bc i copied it from somewhere but it looks useful
-pred <- predict(full_svm_cert, perm_svm)
-plot(pred)
 ```
