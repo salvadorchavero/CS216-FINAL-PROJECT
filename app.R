@@ -5,7 +5,7 @@ library(ggplot2)
 library(shiny)
 
 # Load data ---------------------------------------------------------
-movies <- read.csv("workplease.csv", header = TRUE)
+movies <- read.csv("permanent_edit3.csv", header = TRUE)
 str(movies) # CLEAN THE DATA
 tolower(movies$EMPLOYER$NAME)
 movies = movies[1:200,]
