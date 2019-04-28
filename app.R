@@ -5,37 +5,41 @@ library(ggplot2)
 library(shiny)
 
 # Load data ---------------------------------------------------------
-# Replace with `read.csv` or `read_csv` (tidyverse)
-movies <- read.csv("workplease.csv", header = TRUE)
-str(movies) # CLEAN THE DATA (COMBINE LEVELS, MAKE VAR NUMERIC)
+movies <- read.csv("permanent_edit3.csv", header = TRUE)
+str(movies) # CLEAN THE DATA
+tolower(movies$EMPLOYER$NAME)
 movies = movies[1:200,]
-
 
 # Shiny App ---------------------------------------------------------
 
 
 ui <- fluidPage(
+  
+  titlePanel("Immigration: Insert Better Title Here"),
+  
   # Sidebar layout with a input and output definitions
   sidebarLayout(
     
     # Inputs: Select variables to plot
     sidebarPanel(
-      
+      strong("Project Members"),p("Ashley Murray, Will Ye, Darryl Yan, Thomas Wang, Salavador Chavero Arellano"), 
+      br(),
+
       # Select variable for y-axis
       selectInput(inputId = "y", 
-                  label = "Y-axis:",
-                  choices = c("DECISION_DATE", "CASE_RECEIVED_DATE", "EMPLOYER_NAME", 
-                              "EMPLOYER_STATE", "JOB_INFO_EDUCATION"), 
+                  label = "Relationship with Case Status:",
+                  choices = c("DECISION_DATE", "CASE_RECEIVED_DATE", 
+                              "EMPLOYER_STATE", "JOB_INFO_EDUCATION", "EMPLOYER_NAME", "EMPLOYER_NUM_EMPLOYEES",
+                              "PW_SOC_TITLE"), 
                   selected = "DECISION_DATE"),
-      
       # Select variable for x-axis
       selectInput(inputId = "x", 
-                  label = "X-axis:",
+                  label = "Case Status",
                   choices = "CASE_STATUS", 
                   selected = "CASE_STATUS")
     ),
-    
-    # Output: Show scatterplot
+
+    # Output: Show the plot
     mainPanel(
       plotOutput(outputId = "scatterplot")
     )
@@ -44,7 +48,6 @@ ui <- fluidPage(
 
 server <- function(input, output, session) {
   
-  # Create scatterplot object the plotOutput function is expecting
   observeEvent(input$y, {
     output$scatterplot <- renderPlot({
       ggplot(data = movies, aes_string(x = input$y, fill = input$x)) + geom_bar()
