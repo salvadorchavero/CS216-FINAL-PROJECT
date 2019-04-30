@@ -76,7 +76,8 @@ perm <- perm %>%
     DECISION_DATE <= as.Date("2009-08-01") ~ "Bush",
     DECISION_DATE < as.Date("2017-10-08") ~ "Obama",
     DECISION_DATE >= as.Date("2017-10-08") ~ "Trump",
-    TRUE ~ NA_character_))
+    TRUE ~ NA_character_)) %>%
+  mutate(pres = relevel(factor(pres), ref = "Bush"))
 
 # Add Party
 perm <- perm %>%
@@ -84,8 +85,9 @@ perm <- perm %>%
     DECISION_DATE <= as.Date("2009-08-01") ~ "Republican",
     DECISION_DATE < as.Date("2017-10-08") ~ "Democrat",
     DECISION_DATE >= as.Date("2017-10-08") ~ "Republican",
-    
-  ))
+    TRUE ~ NA_character_
+  )) %>%
+  mutate(pres_party = relevel(factor(pres_party), ref = "Republican"))
 ```
 
 ## Data visualization
@@ -233,6 +235,36 @@ perm %>%
        subtitle = "From 2008 to 2018",
        x = "Education Level",
        y = "Proportion Accepted")
+
+perm_major <- perm %>%
+  filter(!is.na(JOB_INFO_MAJOR)) %>%
+  group_by(JOB_INFO_MAJOR) %>%
+  count(CERT) %>% 
+  mutate(prop = n / sum(n)) %>% 
+  ungroup() %>% 
+  filter(CERT =="Certified", n > 30) %>%
+  arrange(desc(prop))
+
+# Majors w/ highest acceptance
+perm_major %>%
+  head(10) %>% 
+  select(JOB_INFO_MAJOR, prop)
+
+# Majors w/ lowest acceptance
+perm_major %>%
+  tail(10) %>%
+  select(JOB_INFO_MAJOR, prop)
+
+# Add binary indicator for compsci
+perm <- perm %>%
+  mutate(COMPSCI = case_when(
+    !is.na(JOB_INFO_MAJOR) &
+    str_detect(JOB_INFO_MAJOR,
+               regex("com.*sci", ignore_case = TRUE)) ~ "Yes",
+    !is.na(JOB_INFO_MAJOR) ~ "No",
+    TRUE ~ NA_character_
+  )) %>%
+  mutate(COMPCI = relevel(factor(COMPSCI), ref = "No"))
 ```
 
 ### Certification by region
@@ -315,20 +347,27 @@ tidy(selected_model)
 # Partition into 10
 train_control <- trainControl(method = "cv", number = 10)
 
+# Sample 10%
+model_data <- perm %>% 
+  drop_na(YEAR, JOB_INFO_EDUCATION,
+          PW_AMOUNT_9089, EMPLOYER_NUM_EMPLOYEES,
+          EMPLOYER_YR_ESTAB, CERT_BIN, PW_LEVEL_9089, COMPSCI) %>%
+  sample(0.10 * nrow(.))
+
 # Cross validate
 model <- train(factor(CERT_BIN) ~ YEAR + 
                        JOB_INFO_EDUCATION +
                        PW_AMOUNT_9089 +
                        EMPLOYER_NUM_EMPLOYEES + 
-                       EMPLOYER_YR_ESTAB,
-              data = perm %>% drop_na(YEAR, JOB_INFO_EDUCATION,
-                                      PW_AMOUNT_9089, EMPLOYER_NUM_EMPLOYEES,
-                                      EMPLOYER_YR_ESTAB, CERT_BIN),
+                       EMPLOYER_YR_ESTAB + COMPSCI,
+              data = model_data,
               trControl = train_control,
               method = "glm", family = "binomial")
 
 # Show results
 print(model)
+confusionMatrix(model)
+summary(model)
 ```
 
 ### Random Trees Model
