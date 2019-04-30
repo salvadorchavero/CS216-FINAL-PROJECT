@@ -14,9 +14,20 @@ library(tidyverse)
 library(modelr)
 library(caret)
 library(broom)
+library(maps)
+library(randomForest)
+library(e1071)
+library(caret)
 
 # Load permanent worker data
 perm <- read_csv("data/perm_clean.csv")
+
+# Map data
+state_data <- map_data("state")
+state_data <- fortify(state_data)
+world_data <- map_data("world")
+world_data <- world_data %>% filter(region != "Antarctica")
+world_data <- fortify(world_data)
 ```
 
 ## Data wrangling
@@ -37,11 +48,12 @@ perm <- perm %>%
 
 # Separate date into month, day, year
 perm <- perm %>%
-  separate(DECISION_DATE, c("MONTH", "DAY", "YEAR"), sep = "/")
+  separate(DECISION_DATE, c("MONTH", "DAY", "YEAR"),
+           sep = "/", remove = FALSE)
 perm <- perm %>%
   mutate(MONTH = as.numeric(MONTH), DAY = as.numeric(DAY),
-         YEAR = as.numeric(paste0("20", YEAR)))
-
+         YEAR = as.numeric(paste0("20", YEAR))) %>%
+  mutate(DECISION_DATE = as.Date(DECISION_DATE, "%m/%d/%y"))
 
 # Add binary var for certified/not certified
 perm <- perm %>%
@@ -60,10 +72,20 @@ perm <- perm %>%
 
 # Add presidential administrations
 perm <- perm %>%
-  mutate(pres = case_when(YEAR < 2009 ~ "Bush",
-                          2009 <= YEAR & YEAR < 2017 ~ "Obama",
-                          2017 <= YEAR ~ "Trump",
-                          TRUE ~ NA_character_))
+  mutate(pres = case_when(
+    DECISION_DATE <= as.Date("2009-08-01") ~ "Bush",
+    DECISION_DATE < as.Date("2017-10-08") ~ "Obama",
+    DECISION_DATE >= as.Date("2017-10-08") ~ "Trump",
+    TRUE ~ NA_character_))
+
+# Add Party
+perm <- perm %>%
+  mutate(pres_party = case_when(
+    DECISION_DATE <= as.Date("2009-08-01") ~ "Republican",
+    DECISION_DATE < as.Date("2017-10-08") ~ "Democrat",
+    DECISION_DATE >= as.Date("2017-10-08") ~ "Republican",
+    
+  ))
 ```
 
 ## Data visualization
@@ -110,9 +132,10 @@ perm %>%
   ggplot(aes(x = pres, y = prop, fill = CERT)) +
   geom_bar(stat = "identity") +
   labs(title = "Certification Rates by Administration",
-       subtitle = "From 2008 to 2017",
+       subtitle = "From 2008 to 2019",
        x = "Presidential Administration",
-       y = "Proportion")
+       y = "Proportion",
+       fill = "Status")
 ```
 
 ### Certification by country
@@ -205,6 +228,7 @@ perm %>%
              linetype = "dashed", show.legend = TRUE) +
   scale_color_manual(values = c("black", "grey")) +
   guides(fill = FALSE, colour = guide_legend(title = NULL)) +
+  coord_flip() +
   labs(title = "Certification Rate by Education Levels",
        subtitle = "From 2008 to 2018",
        x = "Education Level",
@@ -215,6 +239,49 @@ perm %>%
 
 ```{r region-data-viz}
 # TODO: Recode countries by region and find certification proportion by regions
+
+# Employer state
+perm <- perm %>%
+  mutate(EMPLOYER_STATE_FULL = tolower(state.name[match(EMPLOYER_STATE, state.abb)]))
+
+perm_states <- perm %>%
+  group_by(EMPLOYER_STATE_FULL) %>%
+  count(CERT) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup() %>%
+  filter(CERT == "Certified")
+
+# Certification counts
+ggplot() +
+# Outline of US states
+  geom_map(data = state_data, map = state_data,
+           aes(x = long, y = lat, map_id = region),
+           fill = "#F5F5F5", colour = "grey50") +
+  # Heatmap of acceptance proportion
+  geom_map(data = perm_states, map = state_data,
+           aes(fill = n, map_id = EMPLOYER_STATE_FULL)) +
+  scale_fill_gradient(low = "#F5F5F5", high = "#000080") +
+  labs(title = "State Distribution of Certifications",
+       subtitle = "From 2008 to 2018",
+       x = "Longitude",
+       y = "Latitude",
+       fill = "Number Certified")
+
+# Certification rate
+ggplot() +
+# Outline of US states
+  geom_map(data = state_data, map = state_data,
+           aes(x = long, y = lat, map_id = region),
+           fill = "#F5F5F5", colour = "grey50") +
+  # Heatmap of acceptance proportion
+  geom_map(data = perm_states, map = state_data,
+           aes(fill = prop, map_id = EMPLOYER_STATE_FULL)) +
+  scale_fill_gradient(low = "#F5F5F5", high = "#000080") +
+  labs(title = "State Distribution of Certification Rates",
+       subtitle = "From 2008 to 2018",
+       x = "Longitude",
+       y = "Latitude",
+       fill = "Certif. Rate")
 ```
 
 ### Logistic Regression Model
@@ -225,12 +292,12 @@ full_log_cert <- glm(CERT_BIN ~ YEAR +
                        JOB_INFO_EDUCATION +
                        PW_AMOUNT_9089 +
                        EMPLOYER_NUM_EMPLOYEES + 
-                       EMPLOYER_YR_ESTAB, data = perm, family = binomial())
-
+                       EMPLOYER_YR_ESTAB,
+                     data = perm, 
+                     family = binomial())
 # Display
 tidy(full_log_cert)
 ```
-
 
 #### Backwards selection
 
@@ -262,4 +329,61 @@ model <- train(factor(CERT_BIN) ~ YEAR +
 
 # Show results
 print(model)
+```
+
+### Random Trees Model
+
+```{r randtree-model}
+# perm_cert_bin <- perm %>%
+#   filter(!is.na(CERT_BIN),
+#          !is.na(DECISION_DATE),
+#          !is.na(JOB_INFO_EDUCATION),
+#          !is.na(WAGE_OFFER_FROM_9089),
+#          !is.na(EMPLOYER_NUM_EMPLOYEES),
+#          !is.na(EMPLOYER_YR_ESTAB))
+# 
+# #perm_cert_bin$DECISION_DATE <- as.factor(perm_cert_bin$DECISION_DATE)
+# perm_cert_bin$JOB_INFO_EDUCATION <- as.factor(perm_cert_bin$JOB_INFO_EDUCATION)
+# 
+# full_randtree_cert <- randomForest(CERT_BIN ~ DECISION_DATE + 
+#                        JOB_INFO_EDUCATION +
+#                        WAGE_OFFER_FROM_9089 +
+#                        EMPLOYER_NUM_EMPLOYEES + 
+#                        EMPLOYER_YR_ESTAB
+#                        , data = perm_cert_bin)
+# 
+# # Display
+# tidy(full_randtree_cert)
+```
+
+### Modeling using caret
+
+```{r perm_crop}
+# perm_crop contains only the variables we will use
+perm_crop <- perm %>%
+  select(CERT_BIN, DECISION_DATE, JOB_INFO_EDUCATION, PW_AMOUNT_9089, EMPLOYER_NUM_EMPLOYEES, EMPLOYER_YR_ESTAB) %>%
+  drop_na() %>%
+  mutate(CERT_BIN = as.factor(case_when(
+    CERT_BIN == 1 ~ "y",
+    CERT_BIN == 0 ~ "n"
+  ))) %>%
+  sample_n(10000)
+perm_crop
+```
+
+```{r}
+# create cross validation control
+control <- trainControl(method="cv", number=10)
+
+# svm
+train(CERT_BIN ~ ., data = perm_crop, method="svmLinear", trControl = control)
+
+# k nearest neighbors
+train(CERT_BIN ~ ., data = perm_crop, method="knn", trControl = control)
+
+# random forest
+train(CERT_BIN ~ ., data = perm_crop, method="rf", trControl = control)
+
+# generalized linear model (linear regression)
+train(CERT_BIN ~ ., data = perm_crop, method="glm", trControl = control)
 ```
