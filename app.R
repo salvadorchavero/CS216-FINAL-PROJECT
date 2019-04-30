@@ -8,14 +8,13 @@ library(shiny)
 movies <- read.csv("permanent_edit3.csv", header = TRUE)
 str(movies) # CLEAN THE DATA
 tolower(movies$EMPLOYER$NAME)
-movies = movies[1:200,]
 
 # Shiny App ---------------------------------------------------------
 
 
 ui <- fluidPage(
   
-  titlePanel("Immigration: Insert Better Title Here"),
+  titlePanel("Investigation of Potential Bias in the Visa Acceptance Process of United States Citizenship and Immigration Services"),
   
   # Sidebar layout with a input and output definitions
   sidebarLayout(
@@ -24,7 +23,7 @@ ui <- fluidPage(
     sidebarPanel(
       strong("Project Members"),p("Ashley Murray, Will Ye, Darryl Yan, Thomas Wang, Salavador Chavero Arellano"), 
       br(),
-
+      
       # Select variable for y-axis
       selectInput(inputId = "y", 
                   label = "Relationship with Case Status:",
@@ -38,7 +37,7 @@ ui <- fluidPage(
                   choices = "CASE_STATUS", 
                   selected = "CASE_STATUS")
     ),
-
+    
     # Output: Show the plot
     mainPanel(
       plotOutput(outputId = "scatterplot")
