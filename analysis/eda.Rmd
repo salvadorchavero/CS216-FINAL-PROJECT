@@ -187,7 +187,7 @@ perm_crop <- perm %>%
     CERT_BIN == 1 ~ "y",
     CERT_BIN == 0 ~ "n"
   ))) %>%
-  sample_n(10000)
+  sample_n(1000)
 perm_crop
 ```
 
@@ -196,14 +196,26 @@ perm_crop
 control <- trainControl(method="cv", number=10)
 
 # svm
-train(CERT_BIN ~ ., data = perm_crop, method="svmLinear", trControl = control)
+cert_svm <- train(CERT_BIN ~ ., data = perm_crop, method="svmLinear", trControl = control, tuneLength=15)
+cert_svm # print results
+plot(predict(cert_svm, perm_crop)) # create prediction
+confusionMatrix(cert_svm, dnn = c("Predicted", "Actual")) # display confusion matrix
 
 # k nearest neighbors
-train(CERT_BIN ~ ., data = perm_crop, method="knn", trControl = control)
+cert_knn <- train(CERT_BIN ~ ., data = perm_crop, method="knn", trControl = control)
+cert_knn
+plot(predict(cert_knn, perm_crop))
+confusionMatrix(cert_knn, dnn = c("Predicted", "Actual"))
 
 # random forest
-train(CERT_BIN ~ ., data = perm_crop, method="rf", trControl = control)
+cert_rf <- train(CERT_BIN ~ ., data = perm_crop, method="rf", trControl = control)
+cert_rf
+plot(predict(cert_rf, perm_crop))
+confusionMatrix(cert_rf, dnn = c("Predicted", "Actual"))
 
 # generalized linear model (linear regression)
-train(CERT_BIN ~ ., data = perm_crop, method="glm", trControl = control)
+cert_glm <- train(CERT_BIN ~ ., data = perm_crop, method="glm", trControl = control)
+cert_glm
+plot(predict(cert_glm, perm_crop))
+confusionMatrix(cert_glm, dnn = c("Predicted", "Actual"))
 ```
