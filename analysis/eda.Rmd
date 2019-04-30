@@ -262,7 +262,7 @@ perm <- perm %>%
     !is.na(JOB_INFO_MAJOR) ~ "No",
     TRUE ~ NA_character_
   )) %>%
-  mutate(COMPCI = relevel(factor(COMPSCI), ref = "No"))
+  mutate(COMPSCI = relevel(factor(COMPSCI), ref = "No"))
 ```
 
 ### Certification by region
@@ -345,9 +345,12 @@ tidy(selected_model)
 # Partition into 10
 train_control <- trainControl(method = "cv", number = 10)
 
-# Sample 10%
-model_data <- perm %>% 
+# Sample 10%, crop for only selected variables
+perm_crop <- perm %>% 
   drop_na(YEAR, JOB_INFO_EDUCATION,
+          PW_AMOUNT_9089, EMPLOYER_NUM_EMPLOYEES,
+          EMPLOYER_YR_ESTAB, CERT_BIN, PW_LEVEL_9089, COMPSCI) %>%
+  select(YEAR, JOB_INFO_EDUCATION,
           PW_AMOUNT_9089, EMPLOYER_NUM_EMPLOYEES,
           EMPLOYER_YR_ESTAB, CERT_BIN, PW_LEVEL_9089, COMPSCI) %>%
   sample(0.10 * nrow(.))
