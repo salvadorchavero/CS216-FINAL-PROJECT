@@ -15,9 +15,7 @@ library(modelr)
 library(caret)
 library(broom)
 library(maps)
-library(randomForest)
 library(e1071)
-library(caret)
 
 # Load permanent worker data
 perm <- read_csv("data/perm_clean.csv")
