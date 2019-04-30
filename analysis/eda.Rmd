@@ -8,22 +8,31 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ## Load data and packages
+
 ```{r load-data-package, message=FALSE}
 library(tidyverse)
+library(modelr)
+library(caret)
 library(broom)
+library(maps)
 library(randomForest)
 library(e1071)
 library(caret)
 
 # Load permanent worker data
-perm <- read_csv("data/combinedpermanentedit.csv")
+perm <- read_csv("data/perm_clean.csv")
+
+# Map data
+state_data <- map_data("state")
+state_data <- fortify(state_data)
+world_data <- map_data("world")
+world_data <- world_data %>% filter(region != "Antarctica")
+world_data <- fortify(world_data)
 ```
 
 ## Data wrangling
 
 ```{r data-wrangle}
-perm %>% distinct(CASE_STATUS)
-
 # Wrangle original variables 
 perm <- perm %>%
   # Collapse CASE_STATUS
@@ -35,12 +44,16 @@ perm <- perm %>%
     TRUE ~ CASE_STATUS
   )) %>%
   # Factor education w/ ref = "None"
-  mutate(JOB_INFO_EDUCATION = relevel(factor(JOB_INFO_EDUCATION), ref = "None")) %>%
-  # Convert string dates to Date
-  mutate(DECISION_DATE = as.Date(DECISION_DATE),
-         CASE_RECEIVED_DATE = as.Date(CASE_RECEIVED_DATE),
-         ORIG_FILE_DATE = as.Date(ORIG_FILE_DATE))
+  mutate(JOB_INFO_EDUCATION = relevel(factor(JOB_INFO_EDUCATION), ref = "None"))
 
+# Separate date into month, day, year
+perm <- perm %>%
+  separate(DECISION_DATE, c("MONTH", "DAY", "YEAR"),
+           sep = "/", remove = FALSE)
+perm <- perm %>%
+  mutate(MONTH = as.numeric(MONTH), DAY = as.numeric(DAY),
+         YEAR = as.numeric(paste0("20", YEAR))) %>%
+  mutate(DECISION_DATE = as.Date(DECISION_DATE, "%m/%d/%y"))
 
 # Add binary var for certified/not certified
 perm <- perm %>%
@@ -53,9 +66,77 @@ perm <- perm %>%
       CASE_STATUS %in% c("Certified", "Certified-Expired") ~ 1,
       CASE_STATUS == "Denied" ~ 0,
       TRUE ~ NA_real_))
+
+perm <- perm %>%
+  mutate(CERT_BIN = factor(CERT_BIN, levels = c(0, 1)))
+
+# Add presidential administrations
+perm <- perm %>%
+  mutate(pres = case_when(
+    DECISION_DATE <= as.Date("2009-08-01") ~ "Bush",
+    DECISION_DATE < as.Date("2017-10-08") ~ "Obama",
+    DECISION_DATE >= as.Date("2017-10-08") ~ "Trump",
+    TRUE ~ NA_character_))
+
+# Add Party
+perm <- perm %>%
+  mutate(pres_party = case_when(
+    DECISION_DATE <= as.Date("2009-08-01") ~ "Republican",
+    DECISION_DATE < as.Date("2017-10-08") ~ "Democrat",
+    DECISION_DATE >= as.Date("2017-10-08") ~ "Republican",
+    
+  ))
 ```
 
 ## Data visualization
+
+### Certification over time
+
+```{r cert-time}
+perm %>%
+  filter(CERT == "Certified") %>%
+  count(YEAR) %>%
+  ggplot(aes(x = YEAR, y = n, color = "red")) +
+  geom_point() +
+  geom_line() +
+  guides(color = FALSE) +
+  labs(title = "Permanent Worker Certifications over Time",
+       subtitle = "From 2008 to 2018",
+       x = "Year",
+       y = "Number Certified") +
+  scale_y_continuous(limits = c(0, 1.5E5))
+
+perm %>%
+  filter(!is.na(CERT)) %>%
+  group_by(YEAR) %>%
+  count(CERT) %>%
+  mutate(prop = n / sum(n)) %>%
+  filter(CERT == "Certified") %>%
+  ggplot(aes(x = YEAR, y = prop, color = CERT)) +
+  geom_point() +
+  geom_line() +
+  guides(color = FALSE) +
+  labs(title = "Certification Rates over Time",
+       subtitle = "From 2008 - 2018",
+       x = "Year",
+       y = "Proportion Certified") +
+  scale_y_continuous(limits = c(0, 1))
+```
+
+```{r cert-political}
+perm %>%
+  filter(!is.na(CERT)) %>%
+  group_by(pres) %>%
+  count(CERT) %>%
+  mutate(prop = n / sum(n)) %>%
+  ggplot(aes(x = pres, y = prop, fill = CERT)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Certification Rates by Administration",
+       subtitle = "From 2008 to 2019",
+       x = "Presidential Administration",
+       y = "Proportion",
+       fill = "Status")
+```
 
 ### Certification by country
 
@@ -130,25 +211,124 @@ perm_country %>%
 # TODO: Geospatial visualization by country and prop of certification
 ```
 
+### Education
+
+```{r cert-education}
+# Certification by Education
+perm %>%
+  filter(!is.na(CERT), !is.na(JOB_INFO_EDUCATION)) %>%
+  group_by(JOB_INFO_EDUCATION) %>%
+  count(CERT) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup() %>%
+  filter(CERT == "Certified") %>%
+  ggplot(aes(x = reorder(JOB_INFO_EDUCATION, -prop), y = prop, fill = "red")) +
+  geom_bar(stat = "identity") +
+  geom_hline(aes(yintercept = prop_accepted, colour = "Overall Rate"), 
+             linetype = "dashed", show.legend = TRUE) +
+  scale_color_manual(values = c("black", "grey")) +
+  guides(fill = FALSE, colour = guide_legend(title = NULL)) +
+  coord_flip() +
+  labs(title = "Certification Rate by Education Levels",
+       subtitle = "From 2008 to 2018",
+       x = "Education Level",
+       y = "Proportion Accepted")
+```
+
 ### Certification by region
 
 ```{r region-data-viz}
 # TODO: Recode countries by region and find certification proportion by regions
+
+# Employer state
+perm <- perm %>%
+  mutate(EMPLOYER_STATE_FULL = tolower(state.name[match(EMPLOYER_STATE, state.abb)]))
+
+perm_states <- perm %>%
+  group_by(EMPLOYER_STATE_FULL) %>%
+  count(CERT) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup() %>%
+  filter(CERT == "Certified")
+
+# Certification counts
+ggplot() +
+# Outline of US states
+  geom_map(data = state_data, map = state_data,
+           aes(x = long, y = lat, map_id = region),
+           fill = "#F5F5F5", colour = "grey50") +
+  # Heatmap of acceptance proportion
+  geom_map(data = perm_states, map = state_data,
+           aes(fill = n, map_id = EMPLOYER_STATE_FULL)) +
+  scale_fill_gradient(low = "#F5F5F5", high = "#000080") +
+  labs(title = "State Distribution of Certifications",
+       subtitle = "From 2008 to 2018",
+       x = "Longitude",
+       y = "Latitude",
+       fill = "Number Certified")
+
+# Certification rate
+ggplot() +
+# Outline of US states
+  geom_map(data = state_data, map = state_data,
+           aes(x = long, y = lat, map_id = region),
+           fill = "#F5F5F5", colour = "grey50") +
+  # Heatmap of acceptance proportion
+  geom_map(data = perm_states, map = state_data,
+           aes(fill = prop, map_id = EMPLOYER_STATE_FULL)) +
+  scale_fill_gradient(low = "#F5F5F5", high = "#000080") +
+  labs(title = "State Distribution of Certification Rates",
+       subtitle = "From 2008 to 2018",
+       x = "Longitude",
+       y = "Latitude",
+       fill = "Certif. Rate")
 ```
 
 ### Logistic Regression Model
 
 ```{r logit-model}
 perm$JOB_INFO_EDUCATION <- relevel(factor(perm$JOB_INFO_EDUCATION), ref = "None")
-full_log_cert <- glm(CERT_BIN ~ DECISION_DATE + 
+full_log_cert <- glm(CERT_BIN ~ YEAR + 
                        JOB_INFO_EDUCATION +
-                       WAGE_OFFER_FROM_9089 +
+                       PW_AMOUNT_9089 +
                        EMPLOYER_NUM_EMPLOYEES + 
-                       EMPLOYER_YR_ESTAB
-                       , data = perm, family = binomial())
-full_log_cert
+                       EMPLOYER_YR_ESTAB,
+                     data = perm, 
+                     family = binomial())
 # Display
 tidy(full_log_cert)
+```
+
+#### Backwards selection
+
+```{r backwards-select}
+# Conduct backwards selection
+selected_model <- step(full_log_cert, direction = "backward")
+
+# Show variables
+tidy(selected_model)
+```
+
+#### Cross validation
+
+```{r lr-cross-validate}
+# Partition into 10
+train_control <- trainControl(method = "cv", number = 10)
+
+# Cross validate
+model <- train(factor(CERT_BIN) ~ YEAR + 
+                       JOB_INFO_EDUCATION +
+                       PW_AMOUNT_9089 +
+                       EMPLOYER_NUM_EMPLOYEES + 
+                       EMPLOYER_YR_ESTAB,
+              data = perm %>% drop_na(YEAR, JOB_INFO_EDUCATION,
+                                      PW_AMOUNT_9089, EMPLOYER_NUM_EMPLOYEES,
+                                      EMPLOYER_YR_ESTAB, CERT_BIN),
+              trControl = train_control,
+              method = "glm", family = "binomial")
+
+# Show results
+print(model)
 ```
 
 ### Random Trees Model
@@ -181,7 +361,7 @@ tidy(full_log_cert)
 ```{r perm_crop}
 # perm_crop contains only the variables we will use
 perm_crop <- perm %>%
-  select(CERT_BIN, DECISION_DATE, JOB_INFO_EDUCATION, WAGE_OFFER_FROM_9089, EMPLOYER_NUM_EMPLOYEES, EMPLOYER_YR_ESTAB) %>%
+  select(CERT_BIN, DECISION_DATE, JOB_INFO_EDUCATION, PW_AMOUNT_9089, EMPLOYER_NUM_EMPLOYEES, EMPLOYER_YR_ESTAB) %>%
   drop_na() %>%
   mutate(CERT_BIN = as.factor(case_when(
     CERT_BIN == 1 ~ "y",
