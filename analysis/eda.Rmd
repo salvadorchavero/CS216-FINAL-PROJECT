@@ -10,6 +10,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Load data and packages
 
 ```{r load-data-package, message=FALSE}
+set.seed(123)
+
 library(tidyverse)
 library(modelr)
 library(caret)
@@ -318,11 +320,13 @@ ggplot() +
 
 ```{r logit-model}
 perm$JOB_INFO_EDUCATION <- relevel(factor(perm$JOB_INFO_EDUCATION), ref = "None")
+perm$pres <- relevel(factor(perm$pres), ref = "Obama")
 full_log_cert <- glm(CERT_BIN ~ YEAR + 
                        JOB_INFO_EDUCATION +
                        PW_AMOUNT_9089 +
                        EMPLOYER_NUM_EMPLOYEES + 
-                       EMPLOYER_YR_ESTAB,
+                       EMPLOYER_YR_ESTAB + COMPSCI +
+                       pres + pres_party,
                      data = perm, 
                      family = binomial())
 # Display
@@ -349,19 +353,19 @@ train_control <- trainControl(method = "cv", number = 10)
 perm_crop <- perm %>% 
   drop_na(YEAR, JOB_INFO_EDUCATION,
           PW_AMOUNT_9089, EMPLOYER_NUM_EMPLOYEES,
-          EMPLOYER_YR_ESTAB, CERT_BIN, PW_LEVEL_9089, COMPSCI) %>%
+          EMPLOYER_YR_ESTAB, CERT_BIN, PW_LEVEL_9089, COMPSCI, pres) %>%
   select(YEAR, JOB_INFO_EDUCATION,
           PW_AMOUNT_9089, EMPLOYER_NUM_EMPLOYEES,
-          EMPLOYER_YR_ESTAB, CERT_BIN, PW_LEVEL_9089, COMPSCI) %>%
-  sample(0.10 * nrow(.))
+          EMPLOYER_YR_ESTAB, CERT_BIN, PW_LEVEL_9089, COMPSCI, pres) %>%
+  sample_n(0.10 * nrow(.))
 
 # Cross validate
 model <- train(factor(CERT_BIN) ~ YEAR + 
                        JOB_INFO_EDUCATION +
                        PW_AMOUNT_9089 +
                        EMPLOYER_NUM_EMPLOYEES + 
-                       EMPLOYER_YR_ESTAB + COMPSCI,
-              data = model_data,
+                       EMPLOYER_YR_ESTAB + COMPSCI + pres,
+              data = perm_crop,
               trControl = train_control,
               method = "glm", family = "binomial")
 
@@ -373,24 +377,11 @@ summary(model)
 
 ### Modeling using caret
 
-```{r perm_crop}
-# perm_crop contains only the variables we will use
-perm_crop <- perm %>%
-  select(CERT_BIN, DECISION_DATE, JOB_INFO_EDUCATION, PW_AMOUNT_9089, EMPLOYER_NUM_EMPLOYEES, EMPLOYER_YR_ESTAB) %>%
-  drop_na() %>%
-  mutate(CERT_BIN = as.factor(case_when(
-    CERT_BIN == 1 ~ "y",
-    CERT_BIN == 0 ~ "n"
-  ))) 
-  #%>%
-    #sample_n(1000)
-perm_crop
-```
-
 ```{r creating-control}
 # create cross validation control
 control <- trainControl(method="cv", number=10)
 ```
+
 ```{r svm}
 # svm
 cert_svm <- train(CERT_BIN ~ ., data = perm_crop, method="svmLinear", trControl = control, tuneLength=15)
@@ -398,6 +389,7 @@ cert_svm # print results
 plot(predict(cert_svm, perm_crop)) # create prediction
 confusionMatrix(cert_svm, dnn = c("Predicted", "Actual")) # display confusion matrix
 ```
+
 ```{r knn}
 # k nearest neighbors
 cert_knn <- train(CERT_BIN ~ ., data = perm_crop, method="knn", trControl = control)
@@ -405,6 +397,7 @@ cert_knn
 plot(predict(cert_knn, perm_crop))
 confusionMatrix(cert_knn, dnn = c("Predicted", "Actual"))
 ```
+
 ```{r rf}
 # random forest
 #cert_rf <- train(CERT_BIN ~ ., data = perm_crop, method="rf", trControl = control)
@@ -412,6 +405,7 @@ confusionMatrix(cert_knn, dnn = c("Predicted", "Actual"))
 #plot(predict(cert_rf, perm_crop))
 #confusionMatrix(cert_rf, dnn = c("Predicted", "Actual"))
 ```
+
 ```{r glmm}
 # generalized linear model (linear regression)
 cert_glm <- train(CERT_BIN ~ ., data = perm_crop, method="glm", trControl = control)
