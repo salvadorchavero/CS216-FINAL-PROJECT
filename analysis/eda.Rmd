@@ -329,31 +329,6 @@ model <- train(factor(CERT_BIN) ~ YEAR +
 print(model)
 ```
 
-### Random Trees Model
-
-```{r randtree-model}
-# perm_cert_bin <- perm %>%
-#   filter(!is.na(CERT_BIN),
-#          !is.na(DECISION_DATE),
-#          !is.na(JOB_INFO_EDUCATION),
-#          !is.na(WAGE_OFFER_FROM_9089),
-#          !is.na(EMPLOYER_NUM_EMPLOYEES),
-#          !is.na(EMPLOYER_YR_ESTAB))
-# 
-# #perm_cert_bin$DECISION_DATE <- as.factor(perm_cert_bin$DECISION_DATE)
-# perm_cert_bin$JOB_INFO_EDUCATION <- as.factor(perm_cert_bin$JOB_INFO_EDUCATION)
-# 
-# full_randtree_cert <- randomForest(CERT_BIN ~ DECISION_DATE + 
-#                        JOB_INFO_EDUCATION +
-#                        WAGE_OFFER_FROM_9089 +
-#                        EMPLOYER_NUM_EMPLOYEES + 
-#                        EMPLOYER_YR_ESTAB
-#                        , data = perm_cert_bin)
-# 
-# # Display
-# tidy(full_randtree_cert)
-```
-
 ### Modeling using caret
 
 ```{r perm_crop}
@@ -364,33 +339,38 @@ perm_crop <- perm %>%
   mutate(CERT_BIN = as.factor(case_when(
     CERT_BIN == 1 ~ "y",
     CERT_BIN == 0 ~ "n"
-  ))) %>%
-  sample_n(1000)
+  ))) 
+  #%>%
+    #sample_n(1000)
 perm_crop
 ```
 
-```{r}
+```{r creating-control}
 # create cross validation control
 control <- trainControl(method="cv", number=10)
-
+```
+```{r svm}
 # svm
 cert_svm <- train(CERT_BIN ~ ., data = perm_crop, method="svmLinear", trControl = control, tuneLength=15)
 cert_svm # print results
 plot(predict(cert_svm, perm_crop)) # create prediction
 confusionMatrix(cert_svm, dnn = c("Predicted", "Actual")) # display confusion matrix
-
+```
+```{r knn}
 # k nearest neighbors
 cert_knn <- train(CERT_BIN ~ ., data = perm_crop, method="knn", trControl = control)
 cert_knn
 plot(predict(cert_knn, perm_crop))
 confusionMatrix(cert_knn, dnn = c("Predicted", "Actual"))
-
+```
+```{r rf}
 # random forest
-cert_rf <- train(CERT_BIN ~ ., data = perm_crop, method="rf", trControl = control)
-cert_rf
-plot(predict(cert_rf, perm_crop))
-confusionMatrix(cert_rf, dnn = c("Predicted", "Actual"))
-
+#cert_rf <- train(CERT_BIN ~ ., data = perm_crop, method="rf", trControl = control)
+#cert_rf
+#plot(predict(cert_rf, perm_crop))
+#confusionMatrix(cert_rf, dnn = c("Predicted", "Actual"))
+```
+```{r glmm}
 # generalized linear model (linear regression)
 cert_glm <- train(CERT_BIN ~ ., data = perm_crop, method="glm", trControl = control)
 cert_glm
